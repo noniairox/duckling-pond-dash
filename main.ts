@@ -2,9 +2,11 @@
 // game/ folder, plain static files a desktop browser loads offline (game/index.html and its ES
 // modules, no library and no network request), and the program hands it in. It copies game/ and
 // screenshots/ from beside this file to /output and writes /output/dossier.json, the summary the
-// judge reads, with the vendored make.fun library. Duckling Pond Dash: a duckling hops between
-// lily pads, eats breadcrumbs and dodges a heron (and, from level 3, a cat); a pad that wobbles
-// is about to sink, and the water costs a life. Three lives, 300 points wins the pond.
+// judge reads, with the vendored make.fun library. Duckling Pond Dash v2: a duckling hops between
+// lily pads, eats breadcrumbs and dodges a heron (and, from level 3, a cat); crumbs in a row build
+// a combo worth up to x3, golden crumbs pay 50, a shield bubble takes one hit, and from level 4
+// some pads drift while fish leap from the water. A pad that wobbles is about to sink, and the
+// water costs a life. Three lives, 300 points wins the pond.
 // Put your 3 or 4 PNG or JPEG screenshots in screenshots/ (the first by name is the cover) and
 // run it.
 //
