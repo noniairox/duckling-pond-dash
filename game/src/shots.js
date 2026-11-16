@@ -11,6 +11,9 @@ import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js'
 const START_SECONDS = 5;
 const PLAY_SECONDS = 26;
 const END_LIMIT_SECONDS = 600;
+/** The gold scene: the good pilot plays long enough to build a combo, then a golden crumb
+ * and a shield are placed on pads near the duckling so the frame shows the new depth. */
+const GOLD_SECONDS = 20;
 
 /** Whether a pad is threatened right now: the heron or the cat is about to land on it. */
 function padThreat(state, id) {
@@ -54,7 +57,9 @@ function goodPilot(world) {
     if (pad === null) score += 5;
     else if (pad.state === PAD_GONE || pad.state === PAD_SINKING) score -= 10000;
     else if (pad.state === PAD_WOBBLE) score -= 500;
+    else if (pad.hasGolden) score += 150;
     else if (pad.hasCrumb) score += 100;
+    if (pad !== null && pad.hasShield) score += 60;
     if (padThreat(state, cand.id)) score -= 1000;
     if (score > bestScore) {
       bestScore = score;
@@ -94,14 +99,46 @@ function badPilot(world) {
 }
 
 /**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
+ * Set `world` to the named scene (start, play, gold or end; any other name is start) and return
+ * the screen to draw over it and the best score to show.
  */
 export function stageShot(name, world) {
   world.reset();
-  if (name !== 'play' && name !== 'end') {
+  if (name !== 'play' && name !== 'end' && name !== 'gold') {
     for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, true);
     return { screen: SCREEN_TITLE, best: 0 };
+  }
+  if (name === 'gold') {
+    for (let index = 0; index < GOLD_SECONDS / STEP; index += 1) {
+      goodPilot(world);
+      const events = world.step(STEP, false);
+      if (events & (EVENT_OVER | EVENT_WIN)) break;
+    }
+    // Stage the showcase: a golden crumb and a shield on healthy pads near the duckling,
+    // and a combo already running, so the HUD shows what the new rules pay.
+    const state = world.state;
+    const duck = state.duckling;
+    let placedGold = false;
+    let placedShield = false;
+    for (let index = 0; index < state.pads.length; index += 1) {
+      const pad = state.pads[index];
+      if (pad.state !== PAD_HEALTHY || pad.hasCrumb || pad.hasGolden || pad.hasShield) continue;
+      const dist = Math.hypot(pad.x - duck.x, pad.y - duck.y);
+      if (dist > 340) continue;
+      if (!placedGold) {
+        pad.hasGolden = true;
+        placedGold = true;
+      } else if (!placedShield) {
+        pad.hasShield = true;
+        placedShield = true;
+      }
+      if (placedGold && placedShield) break;
+    }
+    state.combo = Math.max(state.combo, 3);
+    for (let index = 0; index < 6; index += 1) world.step(STEP, false);
+    if (world.state.won) return { screen: SCREEN_WIN, best: world.state.score };
+    const over = world.state.lives === 0;
+    return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
   }
   const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
   const pilot = name === 'end' ? badPilot : goodPilot;

@@ -57,6 +57,21 @@ export const CAT = {
   bankY: 48,
 };
 
+/** Combo: crumbs eaten in a row without losing a life. A crumb scores 10 x the combo (capped). */
+export const COMBO = { maxMult: 3 };
+
+/** The golden crumb: worth 50, appears from level 2, at most one on the pond at a time. */
+export const GOLDEN = { points: 50, minLevel: 2, chance: 0.16 };
+
+/** The shield bubble: absorbs one hit, appears from level 2, at most one on the pond. */
+export const SHIELD = { minLevel: 2, chance: 0.1 };
+
+/** Pads that drift sideways, from level 4: a share of pads, each with its own amplitude. */
+export const DRIFT = { minLevel: 4, chance: 0.3, minAmp: 16, maxAmp: 30, speed: 0.5 };
+
+/** Fish that leap out of the water (visual only, they never hurt), from level 2. */
+export const FISH = { minLevel: 2, intervalMin: 3.5, intervalMax: 7, leap: 0.9 };
+
 export const PALETTE = {
   backdrop: '#0e2a24',
   sky: '#ffe9a8',
@@ -85,6 +100,10 @@ export const PALETTE = {
   muted: '#5a7358',
   danger: '#d94f3d',
   gold: '#e9a13b',
+  goldBright: '#ffd94d',
+  shield: '#7fd4ff',
+  fish: '#ff9e5e',
+  firefly: '#d8f79a',
 };
 
 export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';

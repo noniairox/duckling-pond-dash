@@ -68,9 +68,24 @@ export function createSound() {
       tone(520, 0.09, 'sine', 0.12);
       tone(760, 0.09, 'sine', 0.09, 0.07);
     },
-    crumb() {
-      tone(880, 0.06, 'triangle', 0.12);
-      tone(1318, 0.09, 'triangle', 0.1, 0.05);
+    crumb(combo) {
+      // The pickup pitch climbs with the combo, so a streak sounds like one.
+      const lift = Math.min(combo ?? 1, 3) - 1;
+      tone(880 + lift * 110, 0.06, 'triangle', 0.12);
+      tone(1318 + lift * 140, 0.09, 'triangle', 0.1, 0.05);
+    },
+    gold() {
+      tone(1047, 0.08, 'triangle', 0.13);
+      tone(1318, 0.08, 'triangle', 0.13, 0.07);
+      tone(1568, 0.16, 'triangle', 0.13, 0.14);
+    },
+    shield() {
+      tone(784, 0.1, 'sine', 0.12);
+      tone(1175, 0.16, 'sine', 0.1, 0.08);
+    },
+    breakShield() {
+      tone(392, 0.12, 'sine', 0.14);
+      tone(262, 0.18, 'sine', 0.12, 0.08);
     },
     splash() {
       noise(0.28, 0.16);

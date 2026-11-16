@@ -2,14 +2,16 @@
 // (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
 // moves between five screens: title, play, paused, game over and win.
 //
-// ?seed=N fixes the pond's pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
+// ?seed=N fixes the pond's pattern. ?shot=start|play|gold|end (with &seed=N) stages that
+// scene instead of running the loop, paints it twice and sets window.__shotReady for a
+// screenshot.
 import { BEST_KEY, LIVES, STEP, WIN_SCORE } from './config.js';
 import { createRandom } from './random.js';
-import { createWorld, EVENT_CRUMB, EVENT_HIT, EVENT_LEVEL, EVENT_OVER, EVENT_WIN } from './world.js';
+import { createWorld, EVENT_BREAK, EVENT_CRUMB, EVENT_GOLD, EVENT_HIT, EVENT_LEVEL, EVENT_OVER, EVENT_SHIELD, EVENT_WIN } from './world.js';
 import { ACTION_CONFIRM, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
 import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
 import { createSound } from './sound.js';
+import { createParticles } from './particles.js';
 import { stageShot } from './shots.js';
 
 /** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
@@ -24,6 +26,7 @@ const canvas = document.getElementById('game');
 const status = document.getElementById('status');
 const world = createWorld(createRandom(seed));
 const renderer = createRenderer(canvas);
+const particles = createParticles(world.random);
 
 function readBest() {
   try {
@@ -46,7 +49,7 @@ function runShot(name) {
   window.__shot = { screen: scene.screen, best: scene.best, score: world.state.score, lives: world.state.lives, level: world.state.level };
   let painted = 0;
   function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
+    renderer.draw(world.state, scene.screen, scene.best, particles);
     painted += 1;
     if (painted < 2) requestAnimationFrame(paint);
     else window.__shotReady = true;
@@ -125,17 +128,44 @@ function runGame() {
   function step() {
     if (screen === SCREEN_TITLE) {
       world.step(STEP, true);
+      particles.update(STEP);
       return;
     }
     const events = world.step(STEP, false);
-    if (events & EVENT_CRUMB) sound.crumb();
+    particles.update(STEP);
+    const duck = world.state.duckling;
+    if (events & EVENT_CRUMB) {
+      sound.crumb(world.state.combo);
+      particles.burst(duck.x, duck.y - 10, '#ffd93b', 10, 120);
+    }
+    if (events & EVENT_GOLD) {
+      sound.gold();
+      particles.burst(duck.x, duck.y - 10, '#ffd94d', 18, 170);
+      announce(`Golden crumb! +50. Combo x${Math.min(world.state.combo, 3)}.`);
+    }
+    if (events & EVENT_SHIELD) {
+      sound.shield();
+      particles.ring(duck.x, duck.y, 'rgba(127,212,255,0.9)');
+      announce('Shield up — it takes the next hit.');
+    }
+    if (events & EVENT_BREAK) {
+      sound.breakShield();
+      particles.ring(duck.x, duck.y, 'rgba(127,212,255,0.9)');
+      announce('Shield broke — it saved a life!');
+    }
     if (events & EVENT_LEVEL) {
       sound.level();
       announce(`Level ${world.state.level}.`);
     }
     if (events & EVENT_HIT) {
-      if (world.state.lives === 0) sound.caught();
-      else sound.splash();
+      if (world.state.lives === 0) {
+        sound.caught();
+        particles.feathers(duck.x, duck.y);
+      } else {
+        sound.splash();
+        particles.splash(duck.x, duck.y);
+        particles.feathers(duck.x, duck.y - 10);
+      }
       announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
     }
     if (events & EVENT_WIN) {
@@ -161,7 +191,7 @@ function runGame() {
     } else {
       accumulator = 0;
     }
-    renderer.draw(world.state, screen, best);
+    renderer.draw(world.state, screen, best, particles);
   }
 
   // Leaving the tab pauses a running game rather than letting the heron swoop unseen.

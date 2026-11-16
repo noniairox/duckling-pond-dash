@@ -3,7 +3,7 @@
 // creature is drawn on the canvas: the yellow duckling, the green lily pads, the grey heron and
 // the orange cat. Animation time comes from the world's elapsed clock, so a staged screenshot
 // always paints the same frame.
-import { FIELD, FONT, HOME_PAD, LIVES, PALETTE } from './config.js';
+import { FIELD, FISH, FONT, HOME_PAD, LIVES, PALETTE } from './config.js';
 import { PAD_GONE, PAD_HEALTHY, PAD_REGROW, PAD_SINKING, PAD_WOBBLE } from './world.js';
 
 export const SCREEN_TITLE = 'title';
@@ -126,6 +126,19 @@ export function createRenderer(canvas) {
       context.ellipse(sx, sy, 7, 2.4, 0, 0, Math.PI * 2);
       context.fill();
     }
+
+    // Fireflies over the water once the pond deepens (level 3): dusk is coming.
+    if (state.level >= 3) {
+      for (let index = 0; index < 12; index += 1) {
+        const fx = 60 + ((index * 211) % 1160) + Math.sin(t * 0.6 + index * 2.4) * 18;
+        const fy = 150 + ((index * 167) % 480) + Math.cos(t * 0.8 + index) * 12;
+        const a = 0.25 + 0.55 * wob(index + 90, t * 1.3);
+        context.fillStyle = `rgba(216,247,154,${a.toFixed(3)})`;
+        context.beginPath();
+        context.arc(fx, fy, 3.2, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
   }
 
   function drawRipple(x, y, r, color, width) {
@@ -210,6 +223,33 @@ export function createRenderer(canvas) {
       context.lineTo(x - 1, y - 14);
       context.closePath();
       context.fill();
+    }
+    if (pad.hasGolden) {
+      // The golden crumb: bigger, brighter, worth 50, with a pulsing halo.
+      const pulse = 0.5 + 0.3 * Math.sin(t * 6 + index);
+      context.fillStyle = `rgba(255,217,77,${pulse.toFixed(2)})`;
+      context.beginPath();
+      context.arc(x, y, 20, 0, Math.PI * 2);
+      context.fill();
+      circle(x - 9, y + 5, 7, PALETTE.gold);
+      circle(x + 4, y + 11, 6, PALETTE.goldBright);
+      circle(x + 11, y - 3, 6, PALETTE.gold);
+      circle(x, y - 2, 4, '#fff3c4');
+      text('50', x, y - 26, 18, PALETTE.goldBright, 'center', 'bold ');
+    }
+    if (pad.hasShield) {
+      // The shield bubble: a blue sphere with a bright glint, bobbing gently.
+      const bob = Math.sin(t * 3 + index) * 3;
+      context.fillStyle = 'rgba(127,212,255,0.45)';
+      context.beginPath();
+      context.arc(x, y - 14 + bob, 16, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = PALETTE.shield;
+      context.lineWidth = 2.5;
+      context.beginPath();
+      context.arc(x, y - 14 + bob, 16, 0, Math.PI * 2);
+      context.stroke();
+      circle(x - 5, y - 19 + bob, 4, '#ffffff');
     }
     if (pad.state === PAD_WOBBLE) {
       text('!', x, y - pad.radius - 8, 26, PALETTE.danger, 'center', 'bold ');
@@ -297,7 +337,42 @@ export function createRenderer(canvas) {
     context.quadraticCurveTo(duck.facing * 2, -38, duck.facing * 6, -39);
     context.stroke();
     context.restore();
+    // The held shield: a blue ring around the duckling that absorbs the next hit.
+    if (state.shield) {
+      context.strokeStyle = PALETTE.shield;
+      context.lineWidth = 3;
+      context.beginPath();
+      context.arc(x, y, 36 + Math.sin(t * 4) * 2, 0, Math.PI * 2);
+      context.stroke();
+      context.fillStyle = 'rgba(127,212,255,0.18)';
+      context.beginPath();
+      context.arc(x, y, 36 + Math.sin(t * 4) * 2, 0, Math.PI * 2);
+      context.fill();
+    }
     void t;
+  }
+
+  /** The leaping fish: an orange arc out of the water, with a splash ring on landing. */
+  function drawFish(state) {
+    const fish = state.fish;
+    if (!fish.active) return;
+    const k = Math.min(1, fish.t / FISH.leap);
+    const y = fish.y - Math.sin(k * Math.PI) * 70;
+    const x = fish.x + k * 40;
+    if (k > 0.9) drawRipple(fish.x + 40, fish.y, 10 + (k - 0.9) * 120, 'rgba(191,232,224,0.6)', 2);
+    context.save();
+    context.translate(x, y);
+    context.rotate(-0.5 + k * 1.0);
+    ellipse(0, 0, 18, 8, PALETTE.fish);
+    context.fillStyle = PALETTE.fish;
+    context.beginPath();
+    context.moveTo(-16, 0);
+    context.lineTo(-26, -8);
+    context.lineTo(-26, 8);
+    context.closePath();
+    context.fill();
+    circle(8, -2, 2, '#23402a');
+    context.restore();
   }
 
   function drawHeron(state) {
@@ -452,6 +527,13 @@ export function createRenderer(canvas) {
     context.textBaseline = 'top';
     text(scoreLabel(state.score), 24, 18, 28, '#ffffff', 'left', 'bold ');
     text(levelLabel(state.level), FIELD.width / 2, 18, 28, '#ffffff', 'center', 'bold ');
+    // The combo: crumbs in a row pay more, so the streak is worth showing.
+    if (state.combo >= 2) {
+      text(`Combo x${Math.min(state.combo, 3)}`, 24, 52, 24, PALETTE.goldBright, 'left', 'bold ');
+    }
+    if (state.shield) {
+      text('Shield', FIELD.width / 2, 52, 24, PALETTE.shield, 'center', 'bold ');
+    }
     const firstLife = FIELD.width - 24 - LIVES * 34;
     text('Lives', firstLife - 12, 18, 28, '#ffffff', 'right', 'bold ');
     for (let life = 0; life < LIVES; life += 1) {
@@ -493,9 +575,11 @@ export function createRenderer(canvas) {
 
   const TITLE_LINES = [
     'Hop the lily pads. Eat the breadcrumbs.',
+    'Crumbs in a row build a combo — up to x3 points!',
+    'Golden crumbs are worth 50. A shield bubble takes one hit.',
     'The heron swoops at your pad — hop away!',
     'From level 3, the cat leaps from the bank too.',
-    'A pad that wobbles is about to sink. Mind the water!',
+    'From level 4, some pads drift. A wobbling pad is about to sink.',
     'Arrows / WASD or click a pad to hop. P pauses, M mutes.',
     '',
   ];
@@ -504,7 +588,7 @@ export function createRenderer(canvas) {
   const WIN_LINES = ['You reached 300 points — Pond Champion!', '', ''];
 
   /** Paint one frame: the pond, then the HUD or a panel for the screen the game is on. */
-  function draw(state, screen, best) {
+  function draw(state, screen, best, particles) {
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = PALETTE.backdrop;
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -512,11 +596,13 @@ export function createRenderer(canvas) {
     drawBackground(state);
     drawHomePad(state.elapsed);
     for (let index = 0; index < state.pads.length; index += 1) drawPad(state.pads[index], index, state.elapsed);
+    drawFish(state);
     drawHeron(state);
     drawCat(state);
     drawDuckling(state);
+    if (particles) particles.draw(context);
     if (screen === SCREEN_TITLE) {
-      TITLE_LINES[5] = bestLabel(best);
+      TITLE_LINES[7] = bestLabel(best);
       drawPanel('Duckling Pond Dash', TITLE_LINES, 'Press Enter or click to start');
       return;
     }
