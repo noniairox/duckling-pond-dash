@@ -1,9 +1,10 @@
 // The game's rules and state, with no drawing and no browser in it: the duckling hopping
 // between lily pads, the pads' sink-and-regrow cycle, the breadcrumbs, the heron's swoops and
-// the cat's leaps, score, lives and level. step() advances one fixed step and returns what
-// happened as bit flags, so the caller can react without the world knowing about screens or
-// sound. Nothing here allocates after createWorld returns.
-import { CAT, COMBO, CRUMB, DRIFT, FIELD, FISH, GOLDEN, HERON, HOME_PAD, HOP, LEVEL_MAX, LEVEL_POINTS, LIVES, PAD, SHIELD, WIN_SCORE } from './config.js';
+// the cat's leaps, the star crumb's Fever and the turtle that blocks a pad, score, lives and
+// level. step() advances one fixed step and returns what happened as bit flags, so the caller
+// can react without the world knowing about screens or sound. Nothing here allocates after
+// createWorld returns.
+import { CAT, COMBO, CRUMB, DRIFT, FEVER, FIELD, FISH, GOLDEN, HERON, HOME_PAD, HOP, LEVEL_MAX, LEVEL_POINTS, LIVES, PAD, SHIELD, STAR, TURTLE, WIN_SCORE } from './config.js';
 
 export const EVENT_HIT = 1;
 export const EVENT_CRUMB = 2;
@@ -16,6 +17,8 @@ export const EVENT_GOLD = 32;
 export const EVENT_SHIELD = 64;
 /** The shield absorbed a hit and broke (no life lost). */
 export const EVENT_BREAK = 128;
+/** A star crumb was eaten (100 points) and Fever started: double points for a while. */
+export const EVENT_FEVER = 256;
 
 export const PAD_HEALTHY = 0;
 export const PAD_WOBBLE = 1;
@@ -41,13 +44,19 @@ export function createWorld(random) {
         /** The pad's home x: drifting pads swing around it. */
         bx: x,
         y: PAD.rows[row] + (random() - 0.5) * 2 * PAD.jitter,
-        radius: PAD.radius,
+        /** Each pad keeps its own size, so the grid never looks stamped out. */
+        radius: PAD.radius * (1 + (random() - 0.5) * 2 * PAD.radiusVar),
+        /** The notch in the pad's rim points a different way per pad. */
+        notch: random() * Math.PI * 2,
         state: PAD_HEALTHY,
         timer: 0,
         hasCrumb: false,
         hasGolden: false,
+        hasStar: false,
         hasShield: false,
-        flower: random() < 0.22,
+        /** True while the turtle sits on this pad: it cannot be hopped to. */
+        turtle: false,
+        flower: random() < 0.3,
         /** Set at reset: whether this pad drifts, and how far and in what phase. */
         moving: false,
         drift: 0,
@@ -66,13 +75,19 @@ export function createWorld(random) {
     combo: 0,
     /** True while the shield bubble is held: it absorbs the next hit. */
     shield: false,
+    /** Seconds of Fever left: while > 0 every point gain is doubled. */
+    fever: 0,
+    /** The turtle that blocks a pad: active while it sits somewhere, pad -1 when hidden. */
+    turtle: { active: false, pad: -1, timer: 10, warn: false },
     /** The leaping fish (visual only): active while it is in the air. */
     fish: { active: false, x: 0, y: 0, t: 0, timer: 3 },
+    /** The last point gain (points and where it happened), for a floating popup; null when none. */
+    lastGain: null,
   };
 
   /** The pad (or the home pad) an id names: HOME_INDEX is the nest pad. */
   function padOf(id) {
-    return id === HOME_INDEX ? { x: HOME_PAD.x, y: HOME_PAD.y, radius: HOME_PAD.radius, state: PAD_HEALTHY, hasCrumb: false } : pads[id];
+    return id === HOME_INDEX ? { x: HOME_PAD.x, y: HOME_PAD.y, radius: HOME_PAD.radius, state: PAD_HEALTHY, hasCrumb: false, hasStar: false, turtle: false } : pads[id];
   }
 
   function reset() {
@@ -82,7 +97,9 @@ export function createWorld(random) {
       pad.timer = padLifetime(random, 1) * (0.4 + random() * 0.6);
       pad.hasCrumb = false;
       pad.hasGolden = false;
+      pad.hasStar = false;
       pad.hasShield = false;
+      pad.turtle = false;
       pad.x = pad.bx;
       pad.moving = false;
       pad.drift = 0;
@@ -111,8 +128,14 @@ export function createWorld(random) {
     state.won = false;
     state.combo = 0;
     state.shield = false;
+    state.fever = 0;
+    state.turtle.active = false;
+    state.turtle.pad = -1;
+    state.turtle.timer = 10;
+    state.turtle.warn = false;
     state.fish.active = false;
     state.fish.timer = 3;
+    state.lastGain = null;
     spawnCrumb();
     spawnCrumb();
   }
@@ -128,13 +151,20 @@ export function createWorld(random) {
     return false;
   }
 
+  function starOnPads() {
+    for (const pad of pads) if (pad.hasStar) return true;
+    return false;
+  }
+
   function spawnCrumb() {
     if (crumbsOnPads() >= CRUMB.max) return;
     for (let tries = 0; tries < 12; tries += 1) {
       const pad = pads[Math.floor(random() * pads.length)];
-      if (pad.state === PAD_HEALTHY && !pad.hasCrumb && !pad.hasGolden && !pad.hasShield) {
-        // From level 2, a spawn is sometimes a golden crumb worth 50 instead of 10.
-        if (state.level >= GOLDEN.minLevel && !goldenOnPads() && random() < GOLDEN.chance) {
+      if (pad.state === PAD_HEALTHY && !pad.hasCrumb && !pad.hasGolden && !pad.hasStar && !pad.hasShield && !pad.turtle) {
+        // From level 2, a spawn is sometimes a star crumb: 100 points and Fever (double points).
+        if (state.level >= STAR.minLevel && !starOnPads() && random() < STAR.chance) {
+          pad.hasStar = true;
+        } else if (state.level >= GOLDEN.minLevel && !goldenOnPads() && random() < GOLDEN.chance) {
           pad.hasGolden = true;
         } else {
           pad.hasCrumb = true;
@@ -154,7 +184,7 @@ export function createWorld(random) {
     if (state.shield || shieldOnPads()) return;
     for (let tries = 0; tries < 12; tries += 1) {
       const pad = pads[Math.floor(random() * pads.length)];
-      if (pad.state === PAD_HEALTHY && !pad.hasCrumb && !pad.hasGolden && !pad.hasShield) {
+      if (pad.state === PAD_HEALTHY && !pad.hasCrumb && !pad.hasGolden && !pad.hasStar && !pad.hasShield && !pad.turtle) {
         pad.hasShield = true;
         return;
       }
@@ -172,10 +202,61 @@ export function createWorld(random) {
     }
   }
 
+  /**
+   * The turtle: from level 3 it surfaces on a healthy, empty pad the duckling is not on,
+   * warns, then sits there blocking it. Landing on its pad bumps the duckling off.
+   * Returns a hit event when it bumps a duckling standing on its pad (defensive: the
+   * spawn excludes the duckling's pad and hopTo refuses turtle pads, so this is the
+   * last line of defence; the landing bump is handled where hops land).
+   */
+  function stepTurtle(dt, harmless) {
+    const turtle = state.turtle;
+    if (state.level < TURTLE.minLevel) return 0;
+    if (!turtle.active) {
+      turtle.timer -= dt;
+      if (turtle.timer <= 0) {
+        for (let tries = 0; tries < 12; tries += 1) {
+          const index = Math.floor(random() * pads.length);
+          const pad = pads[index];
+          if (index === duckling.pad) continue;
+          if (pad.state === PAD_HEALTHY && !pad.hasCrumb && !pad.hasGolden && !pad.hasStar && !pad.hasShield && !pad.turtle) {
+            turtle.active = true;
+            turtle.pad = index;
+            turtle.warn = true;
+            turtle.timer = TURTLE.warn;
+            pad.turtle = true;
+            return 0;
+          }
+        }
+        turtle.timer = 2;
+      }
+      return 0;
+    }
+    turtle.timer -= dt;
+    if (turtle.warn) {
+      if (turtle.timer <= 0) {
+        turtle.warn = false;
+        turtle.timer = TURTLE.sit;
+      }
+      return 0;
+    }
+    if (!harmless && duckling.hop === null && duckling.pad === turtle.pad && duckling.invulnerable === 0) {
+      return loseLife();
+    }
+    if (turtle.timer <= 0) {
+      pads[turtle.pad].turtle = false;
+      turtle.active = false;
+      turtle.pad = -1;
+      turtle.timer = TURTLE.interval * (0.8 + random() * 0.5);
+    }
+    return 0;
+  }
+
   /** Start a hop to the pad `id` (HOME_INDEX or a pad index); false when it cannot start. */
   function hopTo(id) {
     if (duckling.hop !== null) return false;
     const target = padOf(id);
+    if (target.turtle) return false;
     const dx = target.x - duckling.x;
     const dy = target.y - duckling.y;
     const dist = Math.hypot(dx, dy);
@@ -194,6 +275,7 @@ export function createWorld(random) {
     for (let index = 0; index < pads.length; index += 1) candidates.push({ id: index, x: pads[index].x, y: pads[index].y });
     for (const cand of candidates) {
       if (cand.id === duckling.pad) continue;
+      if (cand.id !== HOME_INDEX && pads[cand.id].turtle) continue;
       const vx = cand.x - duckling.x;
       const vy = cand.y - duckling.y;
       const dist = Math.hypot(vx, vy);
@@ -222,6 +304,7 @@ export function createWorld(random) {
     const candidates = [{ id: HOME_INDEX, x: HOME_PAD.x, y: HOME_PAD.y }];
     for (let index = 0; index < pads.length; index += 1) candidates.push({ id: index, x: pads[index].x, y: pads[index].y });
     for (const cand of candidates) {
+      if (cand.id !== HOME_INDEX && pads[cand.id].turtle) continue;
       const dist = Math.hypot(cand.x - x, cand.y - y);
       if (dist < bestDist) {
         bestDist = dist;
@@ -238,9 +321,10 @@ export function createWorld(random) {
   }
 
   /**
-   * A hit lands (heron, cat or sinking pad). A held shield absorbs it and breaks instead
-   * of a life; otherwise the duckling loses a life and its combo, and respawns at the nest.
-   * Returns EVENT_BREAK, EVENT_HIT, or EVENT_HIT | EVENT_OVER when that was the last life.
+   * A hit lands (heron, cat, turtle or sinking pad). A held shield absorbs it and breaks
+   * instead of a life; otherwise the duckling loses a life and its combo, and respawns at
+   * the nest. Returns EVENT_BREAK, EVENT_HIT, or EVENT_HIT | EVENT_OVER when that was
+   * the last life.
    */
   function loseLife() {
     if (state.shield) {
@@ -250,6 +334,7 @@ export function createWorld(random) {
     }
     state.lives -= 1;
     state.combo = 0;
+    state.fever = 0;
     duckling.pad = HOME_INDEX;
     duckling.x = HOME_PAD.x;
     duckling.y = HOME_PAD.y;
@@ -429,6 +514,7 @@ export function createWorld(random) {
         pad.timer = 0.6;
         pad.hasCrumb = false;
         pad.hasGolden = false;
+        pad.hasStar = false;
         pad.hasShield = false;
       } else if (pad.state === PAD_SINKING && pad.timer <= 0) {
         pad.state = PAD_GONE;
@@ -469,6 +555,7 @@ export function createWorld(random) {
   function step(dt, harmless) {
     let events = 0;
     state.elapsed += dt;
+    state.lastGain = null;
     const level = Math.min(LEVEL_MAX, 1 + Math.floor(state.score / LEVEL_POINTS));
     if (!harmless && level !== state.level) {
       state.level = level;
@@ -478,9 +565,12 @@ export function createWorld(random) {
       state.level = level;
     }
     if (duckling.invulnerable > 0) duckling.invulnerable = Math.max(0, duckling.invulnerable - dt);
+    if (state.fever > 0) state.fever = Math.max(0, state.fever - dt);
 
     stepPads(dt);
     stepFish(dt);
+    events |= stepTurtle(dt, harmless);
+    if (events & EVENT_OVER) return events;
 
     // The duckling rides a drifting pad it stands on.
     if (duckling.hop === null && duckling.pad !== HOME_INDEX) {
@@ -518,17 +608,33 @@ export function createWorld(random) {
             if (pad.state === PAD_GONE || pad.state === PAD_SINKING) {
               events |= loseLife();
               if (events & EVENT_OVER) return events;
+            } else if (pad.turtle) {
+              // The turtle surfaced here mid-hop: it bumps the duckling off.
+              events |= loseLife();
+              if (events & EVENT_OVER) return events;
             } else {
-              if (pad.hasGolden) {
-                pad.hasGolden = false;
-                state.score += GOLDEN.points;
+              // Fever doubles every point gain while it lasts.
+              const mult = state.fever > 0 ? FEVER.mult : 1;
+              if (pad.hasStar) {
+                pad.hasStar = false;
+                state.score += STAR.points * mult;
                 state.combo += 1;
+                state.fever = FEVER.duration;
+                state.lastGain = { points: STAR.points * mult, x: duckling.x, y: duckling.y - 40, label: 'FEVER!' };
+                events |= EVENT_FEVER;
+              } else if (pad.hasGolden) {
+                pad.hasGolden = false;
+                state.score += GOLDEN.points * mult;
+                state.combo += 1;
+                state.lastGain = { points: GOLDEN.points * mult, x: duckling.x, y: duckling.y - 40 };
                 events |= EVENT_GOLD;
               } else if (pad.hasCrumb) {
                 pad.hasCrumb = false;
                 // The combo pays: the first crumb in a row is 10, the next 20, then 30.
                 state.combo += 1;
-                state.score += CRUMB.points * Math.min(state.combo, COMBO.maxMult);
+                const gained = CRUMB.points * Math.min(state.combo, COMBO.maxMult) * mult;
+                state.score += gained;
+                state.lastGain = { points: gained, x: duckling.x, y: duckling.y - 40 };
                 events |= EVENT_CRUMB;
               }
               if (pad.hasShield) {

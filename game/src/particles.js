@@ -1,18 +1,19 @@
 // Juice in a fixed pool: sparkles when a crumb is eaten, a splash when the duckling
-// falls in, feathers when it is caught, and a ring when a shield breaks or is picked
-// up. No allocation after creation; the seeded random keeps staged screenshots
-// repeatable. Kinds: 0 spark, 1 drop (falls with gravity), 2 feather (drifts down),
-// 3 ring (an expanding circle, drawn as a stroke).
+// falls in, feathers when it is caught, a ring when a shield breaks or is picked
+// up, and floating score popups (+10, +50, FEVER!). No allocation after creation; the
+// seeded random keeps staged screenshots repeatable. Kinds: 0 spark, 1 drop (falls
+// with gravity), 2 feather (drifts down), 3 ring (an expanding circle, drawn as a
+// stroke), 4 text (a score popup that rises and fades).
 
 export function createParticles(random) {
   const MAX = 160;
   const parts = [];
   for (let index = 0; index < MAX; index += 1) {
-    parts.push({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, size: 2, color: '#ffffff', kind: 0, grav: 0 });
+    parts.push({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, size: 2, color: '#ffffff', kind: 0, grav: 0, text: '' });
   }
   let next = 0;
 
-  function spawn(x, y, vx, vy, life, size, color, kind, grav) {
+  function spawn(x, y, vx, vy, life, size, color, kind, grav, text) {
     const p = parts[next];
     next = (next + 1) % MAX;
     p.x = x;
@@ -25,6 +26,7 @@ export function createParticles(random) {
     p.color = color;
     p.kind = kind;
     p.grav = grav;
+    p.text = text ?? '';
   }
 
   /** A burst of sparks around (x, y): crumbs, golden crumbs and shield pickups. */
@@ -60,6 +62,11 @@ export function createParticles(random) {
     spawn(x, y, 0, 0, 0.5, 6, color, 3, 0);
   }
 
+  /** A floating score popup ("+30", "FEVER!") that rises and fades. */
+  function popup(x, y, text, color) {
+    spawn(x, y, 0, -46, 0.9, 24, color, 4, 0, text);
+  }
+
   function update(dt) {
     for (const p of parts) {
       if (p.life <= 0) continue;
@@ -86,6 +93,15 @@ export function createParticles(random) {
         context.globalAlpha = 1;
         continue;
       }
+      if (p.kind === 4) {
+        context.globalAlpha = a;
+        context.font = `bold ${p.size}px system-ui, sans-serif`;
+        context.textAlign = 'center';
+        context.fillStyle = p.color;
+        context.fillText(p.text, p.x, p.y);
+        context.globalAlpha = 1;
+        continue;
+      }
       context.globalAlpha = a;
       context.fillStyle = p.color;
       context.beginPath();
@@ -99,5 +115,5 @@ export function createParticles(random) {
     }
   }
 
-  return { burst, splash, feathers, ring, update, draw };
+  return { burst, splash, feathers, ring, popup, update, draw };
 }

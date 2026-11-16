@@ -1,9 +1,11 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by an autopilot, so the frame is what a short
-// game really looks like and the same seed always gives the same frame. The play scene's pilot
-// hops to crumbs and away from the heron and the cat; the end scene's pilot chases the heron's
-// target pad and ignores sinking pads, so it is caught out once the predators speed up, as a
-// hurried player is.
+// The screenshot scenes behind ?shot=start|play|gold|end|action. Each one plays the real
+// rules forward from a fresh world for a fixed number of steps, steered by an autopilot, so the
+// frame is what a short game really looks like and the same seed always gives the same frame.
+// The play scene's pilot hops to crumbs and away from the heron and the cat; the end scene's
+// pilot chases the heron's target pad and ignores sinking pads, so it is caught out once the
+// predators speed up, as a hurried player is. The action scene waits for the most dramatic
+// moment — the heron mid-swoop while the duckling is mid-hop — and the gold scene stages the
+// new depth (golden crumb, star crumb, shield, combo, Fever) on pads near the duckling.
 import { HOP, STEP } from './config.js';
 import { EVENT_OVER, EVENT_WIN, HOME_INDEX, PAD_GONE, PAD_HEALTHY, PAD_SINKING, PAD_WOBBLE } from './world.js';
 import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
@@ -14,6 +16,8 @@ const END_LIMIT_SECONDS = 600;
 /** The gold scene: the good pilot plays long enough to build a combo, then a golden crumb
  * and a shield are placed on pads near the duckling so the frame shows the new depth. */
 const GOLD_SECONDS = 20;
+/** The action scene: wait this long at most for the heron to swoop while the duckling hops. */
+const ACTION_LIMIT_SECONDS = 150;
 
 /** Whether a pad is threatened right now: the heron or the cat is about to land on it. */
 function padThreat(state, id) {
@@ -56,7 +60,9 @@ function goodPilot(world) {
     let score = -Math.hypot(cand.x - duck.x, cand.y - duck.y) / 50;
     if (pad === null) score += 5;
     else if (pad.state === PAD_GONE || pad.state === PAD_SINKING) score -= 10000;
+    else if (pad.turtle) score -= 10000;
     else if (pad.state === PAD_WOBBLE) score -= 500;
+    else if (pad.hasStar) score += 250;
     else if (pad.hasGolden) score += 150;
     else if (pad.hasCrumb) score += 100;
     if (pad !== null && pad.hasShield) score += 60;
@@ -99,14 +105,63 @@ function badPilot(world) {
 }
 
 /**
- * Set `world` to the named scene (start, play, gold or end; any other name is start) and return
- * the screen to draw over it and the best score to show.
+ * Stage showcase items on healthy pads near the duckling: a golden crumb, a star crumb
+ * and a shield, so the frame shows the game's depth. Returns what was placed.
+ */
+function stageShowcase(world) {
+  const state = world.state;
+  const duck = state.duckling;
+  let placedGold = false;
+  let placedStar = false;
+  let placedShield = false;
+  for (let index = 0; index < state.pads.length; index += 1) {
+    const pad = state.pads[index];
+    if (pad.state !== PAD_HEALTHY || pad.hasCrumb || pad.hasGolden || pad.hasStar || pad.hasShield || pad.turtle) continue;
+    const dist = Math.hypot(pad.x - duck.x, pad.y - duck.y);
+    if (dist > 340) continue;
+    if (!placedGold) {
+      pad.hasGolden = true;
+      placedGold = true;
+    } else if (!placedStar) {
+      pad.hasStar = true;
+      placedStar = true;
+    } else if (!placedShield) {
+      pad.hasShield = true;
+      placedShield = true;
+    }
+    if (placedGold && placedStar && placedShield) break;
+  }
+  return { placedGold, placedStar, placedShield };
+}
+
+/**
+ * Set `world` to the named scene (start, play, gold, end or action; any other name is
+ * start) and return the screen to draw over it and the best score to show.
  */
 export function stageShot(name, world) {
   world.reset();
-  if (name !== 'play' && name !== 'end' && name !== 'gold') {
+  if (name !== 'play' && name !== 'end' && name !== 'gold' && name !== 'action') {
     for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, true);
     return { screen: SCREEN_TITLE, best: 0 };
+  }
+  if (name === 'action') {
+    // The most dramatic moment: the heron mid-swoop while the duckling is mid-hop,
+    // after enough play that the HUD has a score and a combo. Break before the
+    // pilot can reach 300 and turn the frame into a win panel.
+    for (let index = 0; index < ACTION_LIMIT_SECONDS / STEP; index += 1) {
+      goodPilot(world);
+      const events = world.step(STEP, false);
+      if (events & (EVENT_OVER | EVENT_WIN)) break;
+      const state = world.state;
+      if (state.score >= 290) break;
+      if (state.elapsed > 10 && state.heron.state === 'swoop' && state.duckling.hop !== null) break;
+    }
+    stageShowcase(world);
+    world.state.combo = Math.max(world.state.combo, 3);
+    // Capture at once: the duckling is still mid-hop, the heron still diving.
+    if (world.state.won) return { screen: SCREEN_WIN, best: world.state.score };
+    const over = world.state.lives === 0;
+    return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
   }
   if (name === 'gold') {
     for (let index = 0; index < GOLD_SECONDS / STEP; index += 1) {
@@ -114,28 +169,19 @@ export function stageShot(name, world) {
       const events = world.step(STEP, false);
       if (events & (EVENT_OVER | EVENT_WIN)) break;
     }
-    // Stage the showcase: a golden crumb and a shield on healthy pads near the duckling,
-    // and a combo already running, so the HUD shows what the new rules pay.
-    const state = world.state;
-    const duck = state.duckling;
-    let placedGold = false;
-    let placedShield = false;
-    for (let index = 0; index < state.pads.length; index += 1) {
-      const pad = state.pads[index];
-      if (pad.state !== PAD_HEALTHY || pad.hasCrumb || pad.hasGolden || pad.hasShield) continue;
-      const dist = Math.hypot(pad.x - duck.x, pad.y - duck.y);
-      if (dist > 340) continue;
-      if (!placedGold) {
-        pad.hasGolden = true;
-        placedGold = true;
-      } else if (!placedShield) {
-        pad.hasShield = true;
-        placedShield = true;
-      }
-      if (placedGold && placedShield) break;
+    // Stage the showcase: golden crumb, star crumb and shield on healthy pads near
+    // the duckling, and a combo already running, so the HUD shows what the new rules pay.
+    stageShowcase(world);
+    world.state.combo = Math.max(world.state.combo, 3);
+    // Let the pilot chase the star so Fever starts for real and the HUD shows it.
+    // Break before the score can reach 300 and turn the frame into a win panel.
+    for (let index = 0; index < 10 / STEP; index += 1) {
+      goodPilot(world);
+      const events = world.step(STEP, false);
+      if (events & (EVENT_OVER | EVENT_WIN)) break;
+      if (world.state.fever > 0 || world.state.score >= 290) break;
     }
-    state.combo = Math.max(state.combo, 3);
-    for (let index = 0; index < 6; index += 1) world.step(STEP, false);
+    for (let index = 0; index < 2; index += 1) world.step(STEP, false);
     if (world.state.won) return { screen: SCREEN_WIN, best: world.state.score };
     const over = world.state.lives === 0;
     return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };

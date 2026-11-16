@@ -23,6 +23,8 @@ export const PAD = {
   rows: [170, 310, 450, 590],
   cols: [120, 320, 520, 720, 920, 1120],
   radius: 56,
+  /** Each pad's radius varies by this share, so the grid never looks stamped out. */
+  radiusVar: 0.12,
   jitter: 26,
   healthyMin: 14,
   healthyMax: 26,
@@ -72,6 +74,31 @@ export const DRIFT = { minLevel: 4, chance: 0.3, minAmp: 16, maxAmp: 30, speed: 
 /** Fish that leap out of the water (visual only, they never hurt), from level 2. */
 export const FISH = { minLevel: 2, intervalMin: 3.5, intervalMax: 7, leap: 0.9 };
 
+/** The star crumb: worth 100 and starts FEVER — double points for a few seconds. */
+export const STAR = { points: 100, minLevel: 2, chance: 0.08 };
+export const FEVER = { duration: 8, mult: 2 };
+
+/** The turtle: from level 3 it surfaces on a pad and blocks it; landing on it bumps you. */
+export const TURTLE = { minLevel: 3, interval: 12, warn: 0.8, sit: 5 };
+
+/** Dragonflies that flit over the pond (visual only, they never hurt). */
+export const DRAGONFLY = { count: 3, speed: 0.35 };
+
+/** The duckling is drawn this much bigger than v2, so the hero reads at a glance. */
+export const DUCK_SCALE = 1.25;
+
+/** What each level is called in the HUD. */
+export const LEVEL_NAMES = {
+  1: 'Sunny Pond',
+  2: 'Busy Pond',
+  3: 'Dusk Pond',
+  4: 'Night Pond',
+  5: 'Night Pond',
+  6: 'Night Pond',
+  7: 'Night Pond',
+  8: 'Night Pond',
+};
+
 export const PALETTE = {
   backdrop: '#0e2a24',
   sky: '#ffe9a8',
@@ -83,7 +110,7 @@ export const PALETTE = {
   ripple: '#bfe8e0',
   pad: '#3f9e4d',
   padDark: '#2f7d3a',
-  padWobble: '#a8873c',
+  padWobble: '#d8a93b',
   flower: '#ff8fb3',
   crumb: '#8a5a2b',
   crumbLight: '#c98d4b',
@@ -104,6 +131,34 @@ export const PALETTE = {
   shield: '#7fd4ff',
   fish: '#ff9e5e',
   firefly: '#d8f79a',
+  star: '#fff3c4',
+  turtle: '#4a7a52',
+  turtleDark: '#355c3c',
+  dragonfly: '#9fd8ff',
+};
+
+/** Dusk (level 3): warm orange sky, amber water. */
+export const PALETTE_DUSK = {
+  sky: '#ffb37a',
+  skyTop: '#ff9d5c',
+  bank: '#6a9a4a',
+  bankDark: '#527a38',
+  water: '#3a7a8c',
+  waterDeep: '#24506a',
+  pad: '#4a9e4d',
+  padDark: '#357a3a',
+};
+
+/** Night (level 4+): deep indigo water, moonlit sky, fireflies everywhere. */
+export const PALETTE_NIGHT = {
+  sky: '#2a3a6e',
+  skyTop: '#1a2447',
+  bank: '#2f5a3c',
+  bankDark: '#24452e',
+  water: '#26597f',
+  waterDeep: '#16395e',
+  pad: '#2f7d4a',
+  padDark: '#245c36',
 };
 
 export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';

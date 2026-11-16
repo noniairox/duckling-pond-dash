@@ -79,6 +79,18 @@ export function createSound() {
       tone(1318, 0.08, 'triangle', 0.13, 0.07);
       tone(1568, 0.16, 'triangle', 0.13, 0.14);
     },
+    star() {
+      // A rising arpeggio for the star crumb: Fever starts, points double.
+      tone(1047, 0.07, 'triangle', 0.13);
+      tone(1318, 0.07, 'triangle', 0.13, 0.06);
+      tone(1568, 0.07, 'triangle', 0.13, 0.12);
+      tone(2093, 0.2, 'triangle', 0.14, 0.18);
+    },
+    turtle() {
+      // A low plop as the turtle surfaces.
+      tone(180, 0.14, 'sine', 0.14);
+      tone(120, 0.18, 'sine', 0.12, 0.09);
+    },
     shield() {
       tone(784, 0.1, 'sine', 0.12);
       tone(1175, 0.16, 'sine', 0.1, 0.08);

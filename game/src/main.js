@@ -7,7 +7,7 @@
 // screenshot.
 import { BEST_KEY, LIVES, STEP, WIN_SCORE } from './config.js';
 import { createRandom } from './random.js';
-import { createWorld, EVENT_BREAK, EVENT_CRUMB, EVENT_GOLD, EVENT_HIT, EVENT_LEVEL, EVENT_OVER, EVENT_SHIELD, EVENT_WIN } from './world.js';
+import { createWorld, EVENT_BREAK, EVENT_CRUMB, EVENT_FEVER, EVENT_GOLD, EVENT_HIT, EVENT_LEVEL, EVENT_OVER, EVENT_SHIELD, EVENT_WIN } from './world.js';
 import { ACTION_CONFIRM, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
 import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
 import { createSound } from './sound.js';
@@ -131,9 +131,17 @@ function runGame() {
       particles.update(STEP);
       return;
     }
+    const turtleWasActive = world.state.turtle.active;
     const events = world.step(STEP, false);
     particles.update(STEP);
+    // The turtle just surfaced on a pad: a low plop.
+    if (!turtleWasActive && world.state.turtle.active) sound.turtle();
     const duck = world.state.duckling;
+    // A floating "+points" popup where the gain happened.
+    const gain = world.state.lastGain;
+    if (gain !== null) {
+      particles.popup(gain.x, gain.y, gain.label ?? `+${gain.points}`, gain.label ? '#ffd94d' : '#ffffff');
+    }
     if (events & EVENT_CRUMB) {
       sound.crumb(world.state.combo);
       particles.burst(duck.x, duck.y - 10, '#ffd93b', 10, 120);
@@ -142,6 +150,12 @@ function runGame() {
       sound.gold();
       particles.burst(duck.x, duck.y - 10, '#ffd94d', 18, 170);
       announce(`Golden crumb! +50. Combo x${Math.min(world.state.combo, 3)}.`);
+    }
+    if (events & EVENT_FEVER) {
+      sound.star();
+      particles.burst(duck.x, duck.y - 10, '#ffd94d', 26, 220);
+      particles.ring(duck.x, duck.y, 'rgba(255,217,77,0.9)');
+      announce('Star crumb! FEVER — double points for 8 seconds!');
     }
     if (events & EVENT_SHIELD) {
       sound.shield();
@@ -158,6 +172,7 @@ function runGame() {
       announce(`Level ${world.state.level}.`);
     }
     if (events & EVENT_HIT) {
+      renderer.shake(7);
       if (world.state.lives === 0) {
         sound.caught();
         particles.feathers(duck.x, duck.y);
